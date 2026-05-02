@@ -107,8 +107,22 @@ The API auto-migrates on startup (`Database:AutoMigrate=true`) and seeds the adm
 dotnet test
 ```
 
-- `ServiceFlow.Domain.Tests` — state-machine, entity invariants, guards.
-- `ServiceFlow.Application.Tests` — in-memory DbContext + validators exercise full use cases.
+**Projects**
+
+| Project | What it exercises |
+| ------- | ----------------- |
+| `ServiceFlow.Domain.Tests` | State machine, entity invariants, guards. |
+| `ServiceFlow.Application.Tests` | In-memory `DbContext` + real FluentValidation — use cases without HTTP. |
+| `ServiceFlow.Api.IntegrationTests` | Full HTTP pipeline + real PostgreSQL via [Testcontainers](https://dotnet.testcontainers.org/) (Docker required). |
+
+**Integration tests** (`ServiceFlow.Api.IntegrationTests`):
+
+- Collection fixture `IntegrationTestWebAppFactory` subclasses `WebApplicationFactory<Program>`, starts `postgres:16-alpine`, applies EF migrations, then runs the API against that database.
+- If Docker is not running, tests are **skipped** (not failed), so `dotnet test` still succeeds on machines without Docker.
+- To **force-skip** integration tests (for example in a job without Docker): set `RUN_INTEGRATION_TESTS=false` (or `0` / `no`).
+- To run **only** integration tests: `dotnet test --filter "Category=Integration"` with Docker running.
+
+Add new scenarios by creating classes under `tests/ServiceFlow.Api.IntegrationTests/`, annotating with `[Collection(IntegrationCollection.Name)]` and `[Trait("Category", "Integration")]`, and using `[SkippableFact]` with `Skip.IfNot(_factory.IsEnabled, _factory.DisabledReason)` before `CreateClient()`.
 
 ## Database migrations
 

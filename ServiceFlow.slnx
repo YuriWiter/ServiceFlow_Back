@@ -6,6 +6,7 @@
     <Project Path="src/ServiceFlow.Infrastructure/ServiceFlow.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ServiceFlow.Api.IntegrationTests/ServiceFlow.Api.IntegrationTests.csproj" />
     <Project Path="tests/ServiceFlow.Application.Tests/ServiceFlow.Application.Tests.csproj" />
     <Project Path="tests/ServiceFlow.Domain.Tests/ServiceFlow.Domain.Tests.csproj" />
   </Folder>

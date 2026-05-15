@@ -1,5 +1,4 @@
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 using ServiceFlow.Application.Common;
 using ServiceFlow.Application.Common.Abstractions;
 using ServiceFlow.Application.Common.Exceptions;
@@ -10,26 +9,29 @@ namespace ServiceFlow.Application.ServiceOrders;
 
 internal sealed class ServiceOrderService : IServiceOrderService
 {
-    private readonly IAppDbContext _db;
+    private readonly IServiceFlowPersistence _persistence;
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _clock;
+    private readonly IFirestoreSyncService _firestoreSync;
     private readonly IValidator<OpenServiceOrderCommand> _openValidator;
     private readonly IValidator<TransitionServiceOrderCommand> _transitionValidator;
     private readonly IValidator<AssignStaffCommand> _assignValidator;
     private readonly IValidator<ServiceOrderListFilter> _listValidator;
 
     public ServiceOrderService(
-        IAppDbContext db,
+        IServiceFlowPersistence persistence,
         ICurrentUser currentUser,
         IDateTimeProvider clock,
+        IFirestoreSyncService firestoreSync,
         IValidator<OpenServiceOrderCommand> openValidator,
         IValidator<TransitionServiceOrderCommand> transitionValidator,
         IValidator<AssignStaffCommand> assignValidator,
         IValidator<ServiceOrderListFilter> listValidator)
     {
-        _db = db;
+        _persistence = persistence;
         _currentUser = currentUser;
         _clock = clock;
+        _firestoreSync = firestoreSync;
         _openValidator = openValidator;
         _transitionValidator = transitionValidator;
         _assignValidator = assignValidator;
@@ -41,7 +43,7 @@ internal sealed class ServiceOrderService : IServiceOrderService
         await _openValidator.ValidateAndThrowAppAsync(command, cancellationToken);
         var currentUserId = _currentUser.RequireUserId();
 
-        var vehicle = await _db.Vehicles.FirstOrDefaultAsync(v => v.Id == command.VehicleId, cancellationToken)
+        var vehicle = await _persistence.FindVehicleByIdAsync(command.VehicleId, cancellationToken)
             ?? throw new NotFoundException("Vehicle", command.VehicleId);
         if (vehicle.CustomerId != command.CustomerId)
         {
@@ -50,9 +52,7 @@ internal sealed class ServiceOrderService : IServiceOrderService
 
         if (command.AssignedStaffId is { } staffId)
         {
-            var staffOk = await _db.Users.AnyAsync(
-                u => u.Id == staffId && (u.Role == UserRole.Staff || u.Role == UserRole.Admin) && u.IsActive,
-                cancellationToken);
+            var staffOk = await _persistence.AnyActiveStaffOrAdminAsync(staffId, cancellationToken);
             if (!staffOk)
             {
                 throw new NotFoundException("Staff", staffId);
@@ -67,8 +67,10 @@ internal sealed class ServiceOrderService : IServiceOrderService
             command.AssignedStaffId,
             _clock.UtcNow);
 
-        _db.ServiceOrders.Add(order);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _persistence.AddServiceOrderAsync(order, cancellationToken);
+        await _persistence.SaveChangesAsync(cancellationToken);
+
+        await SyncServiceOrderToFirestoreAsync(order.Id, cancellationToken);
 
         return (await GetAsync(order.Id, cancellationToken))!;
     }
@@ -78,13 +80,12 @@ internal sealed class ServiceOrderService : IServiceOrderService
         await _transitionValidator.ValidateAndThrowAppAsync(command, cancellationToken);
         var currentUserId = _currentUser.RequireUserId();
 
-        var order = await _db.ServiceOrders
-            .Include(o => o.RepairRequests)
-            .FirstOrDefaultAsync(o => o.Id == command.ServiceOrderId, cancellationToken)
+        var order = await _persistence.FindServiceOrderForTransitionAsync(command.ServiceOrderId, cancellationToken)
             ?? throw new NotFoundException("ServiceOrder", command.ServiceOrderId);
 
         order.TransitionTo(command.NextStage, currentUserId, command.Note, _clock.UtcNow);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _persistence.PersistServiceOrderAsync(order, cancellationToken);
+        await SyncServiceOrderToFirestoreAsync(order.Id, cancellationToken);
 
         return (await GetAsync(order.Id, cancellationToken))!;
     }
@@ -93,44 +94,32 @@ internal sealed class ServiceOrderService : IServiceOrderService
     {
         await _assignValidator.ValidateAndThrowAppAsync(command, cancellationToken);
 
-        var staffOk = await _db.Users.AnyAsync(
-            u => u.Id == command.StaffUserId && (u.Role == UserRole.Staff || u.Role == UserRole.Admin) && u.IsActive,
-            cancellationToken);
+        var staffOk = await _persistence.AnyActiveStaffOrAdminAsync(command.StaffUserId, cancellationToken);
         if (!staffOk)
         {
             throw new NotFoundException("Staff", command.StaffUserId);
         }
 
-        var order = await _db.ServiceOrders.FirstOrDefaultAsync(o => o.Id == command.ServiceOrderId, cancellationToken)
+        var order = await _persistence.FindServiceOrderForAssignAsync(command.ServiceOrderId, cancellationToken)
             ?? throw new NotFoundException("ServiceOrder", command.ServiceOrderId);
 
         order.AssignStaff(command.StaffUserId);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _persistence.PersistServiceOrderAsync(order, cancellationToken);
+        await SyncServiceOrderToFirestoreAsync(order.Id, cancellationToken);
 
         return (await GetAsync(order.Id, cancellationToken))!;
     }
 
     public async Task<ServiceOrderDetailDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var order = await _db.ServiceOrders
-            .AsNoTracking()
-            .Include(o => o.StatusHistory)
-            .Include(o => o.RepairRequests)
-                .ThenInclude(r => r.Media)
-            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
-
-        if (order is null)
+        var bundle = await _persistence.GetServiceOrderDetailBundleAsync(id, cancellationToken);
+        if (bundle is null)
         {
             return null;
         }
 
-        EnsureCustomerAccess(order.CustomerId);
-
-        var customer = await _db.Customers.AsNoTracking().FirstAsync(c => c.Id == order.CustomerId, cancellationToken);
-        var vehicle = await _db.Vehicles.AsNoTracking().FirstAsync(v => v.Id == order.VehicleId, cancellationToken);
-        var staff = order.AssignedStaffId is { } staffId
-            ? await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == staffId, cancellationToken)
-            : null;
+        var (order, customer, vehicle, staff) = bundle.Value;
+        await EnsureCustomerAccessAsync(order.CustomerId, cancellationToken);
 
         return ServiceOrderMapper.ToDetail(order, customer, vehicle, staff, order.StatusHistory, order.RepairRequests);
     }
@@ -139,80 +128,50 @@ internal sealed class ServiceOrderService : IServiceOrderService
     {
         await _listValidator.ValidateAndThrowAppAsync(filter, cancellationToken);
 
-        var query = _db.ServiceOrders.AsNoTracking().AsQueryable();
-
+        Guid? restrictToCustomerId = null;
         if (_currentUser.IsCustomer)
         {
-            var customerId = await _db.Customers
-                .AsNoTracking()
-                .Where(c => c.UserId == _currentUser.UserId)
-                .Select(c => (Guid?)c.Id)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (customerId is null)
+            restrictToCustomerId = await _persistence.FindCustomerIdByUserIdAsync(_currentUser.UserId!.Value, cancellationToken);
+            if (restrictToCustomerId is null)
             {
                 return new PagedResult<ServiceOrderSummaryDto>([], filter.Page, filter.PageSize, 0);
             }
-            query = query.Where(o => o.CustomerId == customerId);
-        }
-        else
-        {
-            if (filter.CustomerId is { } cId) query = query.Where(o => o.CustomerId == cId);
-            if (filter.AssignedStaffId is { } sId) query = query.Where(o => o.AssignedStaffId == sId);
         }
 
-        if (filter.Stage is { } stage) query = query.Where(o => o.Stage == stage);
+        var (rows, total) = await _persistence.ListServiceOrdersAsync(filter, restrictToCustomerId, cancellationToken);
+        var dtos = rows.Select(x => new ServiceOrderSummaryDto(
+            x.Order.Id,
+            x.Customer.Id,
+            x.Customer.FullName,
+            x.Vehicle.Id,
+            ServiceOrderMapper.FormatVehicle(x.Vehicle),
+            x.Order.AssignedStaffId,
+            x.Order.Stage,
+            x.Order.CreatedAt,
+            x.Order.UpdatedAt,
+            x.Order.CompletedAt)).ToList();
 
-        var joined = query
-            .Join(_db.Customers, o => o.CustomerId, c => c.Id, (o, c) => new { o, c })
-            .Join(_db.Vehicles, oc => oc.o.VehicleId, v => v.Id, (oc, v) => new { oc.o, oc.c, v });
-
-        if (!string.IsNullOrWhiteSpace(filter.Search))
-        {
-            var s = filter.Search.Trim().ToLower();
-            joined = joined.Where(x =>
-                x.c.FullName.ToLower().Contains(s) ||
-                x.v.LicensePlate.ToLower().Contains(s) ||
-                x.v.Make.ToLower().Contains(s) ||
-                x.v.Model.ToLower().Contains(s));
-        }
-
-        var total = await joined.CountAsync(cancellationToken);
-        var page = await joined
-            .OrderByDescending(x => x.o.CreatedAt)
-            .Skip((filter.Page - 1) * filter.PageSize)
-            .Take(filter.PageSize)
-            .Select(x => new ServiceOrderSummaryDto(
-                x.o.Id,
-                x.c.Id,
-                x.c.FullName,
-                x.v.Id,
-                x.v.Year + " " + x.v.Make + " " + x.v.Model,
-                x.o.AssignedStaffId,
-                x.o.Stage,
-                x.o.CreatedAt,
-                x.o.UpdatedAt,
-                x.o.CompletedAt))
-            .ToListAsync(cancellationToken);
-
-        return new PagedResult<ServiceOrderSummaryDto>(page, filter.Page, filter.PageSize, total);
+        return new PagedResult<ServiceOrderSummaryDto>(dtos, filter.Page, filter.PageSize, total);
     }
 
-    private void EnsureCustomerAccess(Guid customerId)
+    private async Task EnsureCustomerAccessAsync(Guid customerId, CancellationToken cancellationToken)
     {
         if (!_currentUser.IsCustomer)
         {
             return;
         }
 
-        var owningUserId = _db.Customers
-            .AsNoTracking()
-            .Where(c => c.Id == customerId)
-            .Select(c => c.UserId)
-            .FirstOrDefault();
-
+        var owningUserId = await _persistence.FindUserIdByCustomerIdAsync(customerId, cancellationToken);
         if (owningUserId != _currentUser.UserId)
         {
             throw new ForbiddenException("You do not have access to this order.");
         }
+    }
+
+    private async Task SyncServiceOrderToFirestoreAsync(Guid serviceOrderId, CancellationToken cancellationToken)
+    {
+        var snapshot = await _persistence.FindServiceOrderWithHistoryAndRepairsReadOnlyAsync(serviceOrderId, cancellationToken)
+            ?? throw new InvalidOperationException($"Service order {serviceOrderId} not found after save.");
+        await _firestoreSync.UpsertServiceOrderAsync(snapshot, cancellationToken);
     }
 }

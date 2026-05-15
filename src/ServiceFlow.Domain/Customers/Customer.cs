@@ -39,6 +39,27 @@ public sealed partial class Customer : AuditableEntity
         };
     }
 
+    public static Customer FromPersistence(
+        Guid id,
+        string fullName,
+        string phoneNumber,
+        string? email,
+        Guid? userId,
+        DateTimeOffset createdAt,
+        DateTimeOffset updatedAt)
+    {
+        return new Customer
+        {
+            Id = id,
+            FullName = fullName,
+            PhoneNumber = phoneNumber,
+            Email = email,
+            UserId = userId,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
+    }
+
     public void UpdateContact(string fullName, string phoneNumber, string? email)
     {
         FullName = Guard.NotNullOrWhiteSpace(fullName, DomainErrors.Customer.FullNameRequired);

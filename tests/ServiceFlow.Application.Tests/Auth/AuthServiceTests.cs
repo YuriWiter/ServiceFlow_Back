@@ -14,9 +14,12 @@ public sealed class AuthServiceTests
     {
         using var fixture = new InMemoryAppFixture();
         var service = new AuthService(
-            fixture.Db,
+            fixture.Persistence,
             fixture.PasswordHasher,
             fixture.JwtService,
+            fixture.FirestoreSync,
+            fixture.FirestoreUserReader,
+            fixture.FirestoreMigration,
             fixture.Validator<RegisterStaffCommand>(),
             fixture.Validator<RegisterCustomerCommand>(),
             fixture.Validator<LoginCommand>());
@@ -40,9 +43,12 @@ public sealed class AuthServiceTests
     {
         using var fixture = new InMemoryAppFixture();
         var service = new AuthService(
-            fixture.Db,
+            fixture.Persistence,
             fixture.PasswordHasher,
             fixture.JwtService,
+            fixture.FirestoreSync,
+            fixture.FirestoreUserReader,
+            fixture.FirestoreMigration,
             fixture.Validator<RegisterStaffCommand>(),
             fixture.Validator<RegisterCustomerCommand>(),
             fixture.Validator<LoginCommand>());
@@ -63,9 +69,12 @@ public sealed class AuthServiceTests
     {
         using var fixture = new InMemoryAppFixture();
         var service = new AuthService(
-            fixture.Db,
+            fixture.Persistence,
             fixture.PasswordHasher,
             fixture.JwtService,
+            fixture.FirestoreSync,
+            fixture.FirestoreUserReader,
+            fixture.FirestoreMigration,
             fixture.Validator<RegisterStaffCommand>(),
             fixture.Validator<RegisterCustomerCommand>(),
             fixture.Validator<LoginCommand>());
@@ -82,9 +91,12 @@ public sealed class AuthServiceTests
     {
         using var fixture = new InMemoryAppFixture();
         var service = new AuthService(
-            fixture.Db,
+            fixture.Persistence,
             fixture.PasswordHasher,
             fixture.JwtService,
+            fixture.FirestoreSync,
+            fixture.FirestoreUserReader,
+            fixture.FirestoreMigration,
             fixture.Validator<RegisterStaffCommand>(),
             fixture.Validator<RegisterCustomerCommand>(),
             fixture.Validator<LoginCommand>());

@@ -40,6 +40,43 @@ public sealed class RepairRequest : AuditableEntity
         };
     }
 
+    public static RepairRequest FromPersistence(
+        Guid id,
+        Guid serviceOrderId,
+        Guid createdByUserId,
+        string issueDescription,
+        long priceEstimateCents,
+        RepairUrgency urgency,
+        RepairDecision? customerDecision,
+        DateTimeOffset? decidedAt,
+        string? decisionNote,
+        DateTimeOffset createdAt,
+        DateTimeOffset updatedAt,
+        IEnumerable<RepairMedia> media)
+    {
+        var r = new RepairRequest
+        {
+            Id = id,
+            ServiceOrderId = serviceOrderId,
+            CreatedByUserId = createdByUserId,
+            IssueDescription = issueDescription,
+            PriceEstimateCents = priceEstimateCents,
+            Urgency = urgency,
+            CustomerDecision = customerDecision,
+            DecidedAt = decidedAt,
+            DecisionNote = decisionNote,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
+
+        foreach (var m in media)
+        {
+            r._media.Add(m);
+        }
+
+        return r;
+    }
+
     public RepairMedia AttachMedia(MediaType mediaType, string storagePath, string? mimeType, long sizeBytes)
     {
         var media = RepairMedia.Attach(Id, mediaType, storagePath, mimeType, sizeBytes);

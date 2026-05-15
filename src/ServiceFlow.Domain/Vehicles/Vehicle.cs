@@ -55,6 +55,34 @@ public sealed class Vehicle : AuditableEntity
         };
     }
 
+    public static Vehicle FromPersistence(
+        Guid id,
+        Guid customerId,
+        string licensePlate,
+        string make,
+        string model,
+        int year,
+        string? color,
+        string? vin,
+        DateTimeOffset createdAt,
+        DateTimeOffset updatedAt)
+    {
+        return new Vehicle
+        {
+            Id = id,
+            CustomerId = customerId,
+            Customer = null!,
+            LicensePlate = licensePlate,
+            Make = make,
+            Model = model,
+            Year = year,
+            Color = color,
+            Vin = vin,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
+    }
+
     public void UpdateDetails(string make, string model, int year, string? color, string? vin)
     {
         Make = Guard.NotNullOrWhiteSpace(make, DomainErrors.Vehicle.MakeRequired);

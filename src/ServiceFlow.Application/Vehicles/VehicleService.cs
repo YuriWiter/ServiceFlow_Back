@@ -1,5 +1,4 @@
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 using ServiceFlow.Application.Common;
 using ServiceFlow.Application.Common.Abstractions;
 using ServiceFlow.Application.Common.Exceptions;
@@ -9,16 +8,19 @@ namespace ServiceFlow.Application.Vehicles;
 
 internal sealed class VehicleService : IVehicleService
 {
-    private readonly IAppDbContext _db;
+    private readonly IServiceFlowPersistence _persistence;
+    private readonly IFirestoreSyncService _firestoreSync;
     private readonly IValidator<CreateVehicleCommand> _createValidator;
     private readonly IValidator<UpdateVehicleCommand> _updateValidator;
 
     public VehicleService(
-        IAppDbContext db,
+        IServiceFlowPersistence persistence,
+        IFirestoreSyncService firestoreSync,
         IValidator<CreateVehicleCommand> createValidator,
         IValidator<UpdateVehicleCommand> updateValidator)
     {
-        _db = db;
+        _persistence = persistence;
+        _firestoreSync = firestoreSync;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
     }
@@ -27,14 +29,14 @@ internal sealed class VehicleService : IVehicleService
     {
         await _createValidator.ValidateAndThrowAppAsync(command, cancellationToken);
 
-        var customerExists = await _db.Customers.AnyAsync(c => c.Id == command.CustomerId, cancellationToken);
+        var customerExists = await _persistence.CustomerExistsAsync(command.CustomerId, cancellationToken);
         if (!customerExists)
         {
             throw new NotFoundException("Customer", command.CustomerId);
         }
 
         var plate = command.LicensePlate.Replace(" ", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
-        var duplicate = await _db.Vehicles.AnyAsync(v => v.LicensePlate == plate, cancellationToken);
+        var duplicate = await _persistence.VehicleLicensePlateExistsAsync(plate, cancellationToken);
         if (duplicate)
         {
             throw new ConflictException("vehicle.license_plate.taken", "License plate is already registered.");
@@ -49,8 +51,9 @@ internal sealed class VehicleService : IVehicleService
             command.Color,
             command.Vin);
 
-        _db.Vehicles.Add(vehicle);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _persistence.AddVehicleAsync(vehicle, cancellationToken);
+        await _persistence.SaveChangesAsync(cancellationToken);
+        await _firestoreSync.UpsertVehicleAsync(vehicle, cancellationToken);
         return Map(vehicle);
     }
 
@@ -58,28 +61,25 @@ internal sealed class VehicleService : IVehicleService
     {
         await _updateValidator.ValidateAndThrowAppAsync(command, cancellationToken);
 
-        var vehicle = await _db.Vehicles.FirstOrDefaultAsync(v => v.Id == command.VehicleId, cancellationToken)
+        var vehicle = await _persistence.FindVehicleByIdTrackedAsync(command.VehicleId, cancellationToken)
             ?? throw new NotFoundException("Vehicle", command.VehicleId);
 
         vehicle.UpdateDetails(command.Make, command.Model, command.Year, command.Color, command.Vin);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _persistence.PersistVehicleAsync(vehicle, cancellationToken);
+        await _firestoreSync.UpsertVehicleAsync(vehicle, cancellationToken);
         return Map(vehicle);
     }
 
     public async Task<VehicleDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var vehicle = await _db.Vehicles.AsNoTracking().FirstOrDefaultAsync(v => v.Id == id, cancellationToken);
+        var vehicle = await _persistence.FindVehicleByIdReadOnlyAsync(id, cancellationToken);
         return vehicle is null ? null : Map(vehicle);
     }
 
     public async Task<IReadOnlyList<VehicleDto>> ListByCustomerAsync(Guid customerId, CancellationToken cancellationToken = default)
     {
-        return await _db.Vehicles
-            .AsNoTracking()
-            .Where(v => v.CustomerId == customerId)
-            .OrderByDescending(v => v.CreatedAt)
-            .Select(v => Map(v))
-            .ToListAsync(cancellationToken);
+        var list = await _persistence.ListVehiclesByCustomerReadOnlyAsync(customerId, cancellationToken);
+        return list.Select(Map).ToList();
     }
 
     private static VehicleDto Map(Vehicle v)

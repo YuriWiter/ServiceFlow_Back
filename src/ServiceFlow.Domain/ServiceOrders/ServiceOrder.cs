@@ -62,6 +62,38 @@ public sealed class ServiceOrder : AuditableEntity
         return order;
     }
 
+    public static ServiceOrder FromPersistence(
+        Guid id,
+        Guid customerId,
+        Guid vehicleId,
+        Guid? assignedStaffId,
+        ServiceStage stage,
+        string openingDescription,
+        DateTimeOffset? completedAt,
+        DateTimeOffset createdAt,
+        DateTimeOffset updatedAt,
+        IEnumerable<ServiceStatusHistoryEntry> history,
+        IEnumerable<RepairRequest> repairs)
+    {
+        var order = new ServiceOrder
+        {
+            Id = id,
+            CustomerId = customerId,
+            VehicleId = vehicleId,
+            AssignedStaffId = assignedStaffId,
+            Stage = stage,
+            OpeningDescription = openingDescription,
+            CompletedAt = completedAt,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
+
+        order._statusHistory.AddRange(history);
+        order._repairRequests.AddRange(repairs);
+
+        return order;
+    }
+
     public void AssignStaff(Guid staffUserId)
     {
         if (staffUserId == Guid.Empty)

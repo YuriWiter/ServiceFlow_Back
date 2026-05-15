@@ -70,11 +70,14 @@ public sealed class IntegrationTestWebAppFactory : WebApplicationFactory<Program
             return;
         }
 
+        var connectionString = _postgres.GetConnectionString();
+        builder.UseSetting("ConnectionStrings:ServiceFlow", connectionString);
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:ServiceFlow"] = _postgres.GetConnectionString(),
+                ["ConnectionStrings:ServiceFlow"] = connectionString,
                 ["Database:AutoMigrate"] = "true",
                 ["Seed:AdminEmail"] = "",
                 ["Seed:AdminPassword"] = "",
@@ -83,7 +86,11 @@ public sealed class IntegrationTestWebAppFactory : WebApplicationFactory<Program
                 ["Jwt:SigningKey"] = "integration-test-signing-key-min-32-chars!",
                 ["Jwt:AccessTokenLifetimeMinutes"] = "60",
                 ["Serilog:MinimumLevel:Default"] = "Warning",
-                ["Cors:AllowedOrigins:0"] = "http://localhost"
+                ["Cors:AllowedOrigins:0"] = "http://localhost",
+                ["Persistence:Backend"] = "Relational",
+                ["Firestore:Enabled"] = "false",
+                ["Firestore:SyncWrites"] = "false",
+                ["Firestore:AuthReadFromFirestore"] = "false"
             });
         });
     }

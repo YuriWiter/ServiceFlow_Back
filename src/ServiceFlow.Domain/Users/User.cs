@@ -59,4 +59,30 @@ public sealed class User : AuditableEntity
         IsActive = true;
         Touch();
     }
+
+    /// <summary>
+    /// Rehydrates a user from persistence (PostgreSQL, Firestore, etc.). Assumes stored data is already valid.
+    /// </summary>
+    public static User FromPersistence(
+        Guid id,
+        string email,
+        string fullName,
+        string passwordHash,
+        UserRole role,
+        bool isActive,
+        DateTimeOffset createdAt,
+        DateTimeOffset updatedAt)
+    {
+        return new User
+        {
+            Id = id,
+            Email = email,
+            FullName = fullName,
+            PasswordHash = passwordHash,
+            Role = role,
+            IsActive = isActive,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
+    }
 }

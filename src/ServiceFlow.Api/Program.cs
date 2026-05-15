@@ -124,7 +124,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.MapApiEndpoints();
+app.MapApiEndpoints(app.Environment, app.Configuration);
 
 if (builder.Configuration.GetValue("Database:AutoMigrate", defaultValue: true))
 {

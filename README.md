@@ -96,6 +96,31 @@ dotnet run --project src/ServiceFlow.Api
 
 Optional: `docker compose up -d` also starts pgAdmin at <http://localhost:5050>.
 
+### Firestore (migration preview)
+
+Optional work toward moving persistence to **Cloud Firestore**. **PostgreSQL + EF Core remain the system of record** until repositories are rewritten. When `Firestore:Enabled` is `true`, the API registers the Firestore client and exposes a dev-only ping route.
+
+1. Install [Firebase CLI](https://firebase.google.com/docs/cli#install_the_firebase_cli) (`npm install -g firebase-tools`) and a **JDK 11+** (the emulator needs Java).
+2. From the repository root, start the Firestore emulator (see `firebase.json`):
+
+```bash
+firebase emulators:start --only firestore
+```
+
+3. Point the Google client at the emulator and enable Firestore in Development:
+
+```powershell
+$env:FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080"
+```
+
+Set `Firestore:Enabled` to `true` in `appsettings.Development.json` (use `Firestore:ProjectId` such as `demo-serviceflow`; any non-empty id is fine with the emulator). Set `Firestore:SyncWrites` to `true` to mirror **users, customers, vehicles, service orders, and repair requests** to Firestore after PostgreSQL commits (failures are logged only; PostgreSQL remains authoritative). Set `Firestore:AuthReadFromFirestore` to `true` to resolve **login** from Firestore first, then fall back to PostgreSQL if no document exists.
+
+4. Run the API and call **GET** [http://localhost:5066/api/v1/dev/firestore-ping](http://localhost:5066/api/v1/dev/firestore-ping) — expect `{ "firestore": "ok" }`. With `SyncWrites` enabled, after registering or changing data, **GET** `/api/v1/dev/firestore-users/{userId}` returns the Firestore user document (without the password hash).
+
+Emulator UI defaults to <http://127.0.0.1:4000> when enabled in `firebase.json`.
+
+**Consistency:** Each API handler commits to PostgreSQL first, then best-effort upserts to Firestore in the same request. If Firestore fails, data in PostgreSQL is still correct—check logs. With `AuthReadFromFirestore`, login can read from Firestore while replicas catch up; keep `SyncWrites` on until documents are trusted, or accept fallback to PostgreSQL when a user is missing in Firestore.
+
 ### 2. Configure secrets (dev-only defaults ship in `appsettings.Development.json`)
 
 ```bash

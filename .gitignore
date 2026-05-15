@@ -424,6 +424,10 @@ FodyWeavers.xsd
 # Built Visual Studio Code Extensions
 *.vsix
 
+# Firebase emulator (local Firestore)
+firebase-debug.log
+.firebase/
+
 # Windows Installer files from build outputs
 *.cab
 *.msi

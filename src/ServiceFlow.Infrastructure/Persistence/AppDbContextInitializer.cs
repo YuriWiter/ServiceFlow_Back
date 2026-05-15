@@ -8,31 +8,35 @@ using ServiceFlow.Domain.Users;
 namespace ServiceFlow.Infrastructure.Persistence;
 
 /// <summary>
-/// Applies pending migrations and (optionally) seeds the initial admin user declared
-/// in configuration. Safe to run on every startup: all operations are idempotent.
+/// Applies pending EF migrations (relational backend only) and seeds the admin user via <see cref="IServiceFlowPersistence"/>.
 /// </summary>
 public sealed class AppDbContextInitializer
 {
-    private readonly AppDbContext _db;
+    private readonly IServiceFlowPersistence _persistence;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AppDbContextInitializer> _logger;
 
     public AppDbContextInitializer(
-        AppDbContext db,
+        IServiceFlowPersistence persistence,
         IPasswordHasher passwordHasher,
         IConfiguration configuration,
         ILogger<AppDbContextInitializer> logger)
     {
-        _db = db;
+        _persistence = persistence;
         _passwordHasher = passwordHasher;
         _configuration = configuration;
         _logger = logger;
     }
 
-    public async Task MigrateAsync(CancellationToken cancellationToken = default)
+    public async Task MigrateAsync(IServiceProvider services, CancellationToken cancellationToken = default)
     {
-        var pending = await _db.Database.GetPendingMigrationsAsync(cancellationToken);
+        if (services.GetService<AppDbContext>() is not { } db)
+        {
+            return;
+        }
+
+        var pending = await db.Database.GetPendingMigrationsAsync(cancellationToken);
         var pendingList = pending.ToList();
         if (pendingList.Count == 0)
         {
@@ -41,7 +45,7 @@ public sealed class AppDbContextInitializer
         }
 
         _logger.LogInformation("Applying {Count} pending migrations: {Migrations}", pendingList.Count, string.Join(", ", pendingList));
-        await _db.Database.MigrateAsync(cancellationToken);
+        await db.Database.MigrateAsync(cancellationToken);
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -57,15 +61,14 @@ public sealed class AppDbContextInitializer
         }
 
         var emailLower = email.Trim().ToLowerInvariant();
-        var exists = await _db.Users.AnyAsync(u => u.Email == emailLower, cancellationToken);
-        if (exists)
+        if (await _persistence.UserExistsWithEmailAsync(emailLower, cancellationToken))
         {
             return;
         }
 
         var admin = User.Create(emailLower, fullName, _passwordHasher.Hash(password), UserRole.Admin);
-        _db.Users.Add(admin);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _persistence.AddUserAsync(admin, cancellationToken);
+        await _persistence.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Seeded admin user {Email}.", emailLower);
     }
 }
@@ -76,7 +79,7 @@ public static class AppDbContextInitializerExtensions
     {
         await using var scope = services.CreateAsyncScope();
         var initializer = scope.ServiceProvider.GetRequiredService<AppDbContextInitializer>();
-        await initializer.MigrateAsync(cancellationToken);
+        await initializer.MigrateAsync(scope.ServiceProvider, cancellationToken);
         await initializer.SeedAsync(cancellationToken);
     }
 }

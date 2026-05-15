@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ServiceFlow.Application\ServiceFlow.Application.csproj" />
+    <ProjectReference Include="..\..\src\ServiceFlow.Infrastructure\ServiceFlow.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

@@ -35,4 +35,34 @@ public sealed class RepairMedia : Entity
             UploadedAt = now ?? DateTimeOffset.UtcNow
         };
     }
+
+    public static RepairMedia FromPersistence(
+        Guid id,
+        Guid repairRequestId,
+        MediaType mediaType,
+        string storagePath,
+        string? mimeType,
+        long sizeBytes,
+        DateTimeOffset uploadedAt)
+    {
+        return new RepairMedia(id, repairRequestId, mediaType, storagePath, mimeType, sizeBytes, uploadedAt);
+    }
+
+    private RepairMedia(
+        Guid id,
+        Guid repairRequestId,
+        MediaType mediaType,
+        string storagePath,
+        string? mimeType,
+        long sizeBytes,
+        DateTimeOffset uploadedAt)
+    {
+        Id = id;
+        RepairRequestId = repairRequestId;
+        MediaType = mediaType;
+        StoragePath = storagePath;
+        MimeType = mimeType;
+        SizeBytes = sizeBytes;
+        UploadedAt = uploadedAt;
+    }
 }

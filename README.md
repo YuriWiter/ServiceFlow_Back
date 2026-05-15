@@ -68,13 +68,33 @@ All of these are enforced both by the domain entities (unit-tested) and by EF Co
 
 ## Running it locally
 
-### 1. Start PostgreSQL
+### 1. PostgreSQL
+
+**Installed PostgreSQL on the host (default connection string uses `localhost:5432`):**
+
+1. Ensure the server is running (Windows: service `postgresql-x64-*`).
+2. Create the app database and role (password `serviceflow`):
+
+```powershell
+# set once if you prefer not to be prompted
+$env:POSTGRES_SUPERUSER_PASSWORD = '<password for the postgres superuser>'
+.\scripts\Init-ServiceFlowDatabase.ps1
+```
+
+**Docker instead of a local install** (published on `localhost:5433` so it does not fight with an existing service on `5432`):
 
 ```bash
 docker compose up -d postgres
 ```
 
-This brings up PostgreSQL 16 on `localhost:5432` (db/user/password all `serviceflow`) and optionally pgAdmin at <http://localhost:5050>.
+Then point the API at port **5433**, for example:
+
+```powershell
+$env:ConnectionStrings__ServiceFlow = "Host=localhost;Port=5433;Database=serviceflow;Username=serviceflow;Password=serviceflow"
+dotnet run --project src/ServiceFlow.Api
+```
+
+Optional: `docker compose up -d` also starts pgAdmin at <http://localhost:5050>.
 
 ### 2. Configure secrets (dev-only defaults ship in `appsettings.Development.json`)
 

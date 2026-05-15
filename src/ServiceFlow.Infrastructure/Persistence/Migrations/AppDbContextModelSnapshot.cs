@@ -67,7 +67,7 @@ namespace ServiceFlow.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId")
                         .IsUnique()
                         .HasDatabaseName("ix_customers_user_id")
-                        .HasFilter("\"UserId\" IS NOT NULL");
+                        .HasFilter("user_id IS NOT NULL");
 
                     b.ToTable("customers", "serviceflow");
                 });

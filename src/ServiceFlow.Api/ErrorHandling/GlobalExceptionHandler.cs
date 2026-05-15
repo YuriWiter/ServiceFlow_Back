@@ -23,6 +23,9 @@ internal sealed class GlobalExceptionHandler : IExceptionHandler
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
+        if (exception is OperationCanceledException)
+            return false;
+
         var problem = exception switch
         {
             ValidationException ve => Build(
@@ -54,8 +57,6 @@ internal sealed class GlobalExceptionHandler : IExceptionHandler
                 "Forbidden",
                 fe.Message,
                 extensions: new Dictionary<string, object?> { ["code"] = fe.Code }),
-
-            OperationCanceledException => null,
 
             _ => null
         };

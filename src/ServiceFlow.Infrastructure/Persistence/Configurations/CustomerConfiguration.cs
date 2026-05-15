@@ -16,7 +16,7 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(x => x.PhoneNumber).IsRequired().HasMaxLength(20);
         builder.Property(x => x.Email).HasMaxLength(255);
         builder.Property(x => x.UserId);
-        builder.HasIndex(x => x.UserId).IsUnique().HasFilter("\"UserId\" IS NOT NULL");
+        builder.HasIndex(x => x.UserId).IsUnique().HasFilter("user_id IS NOT NULL");
         builder.HasIndex(x => x.PhoneNumber);
 
         builder.Property(x => x.CreatedAt).IsRequired();

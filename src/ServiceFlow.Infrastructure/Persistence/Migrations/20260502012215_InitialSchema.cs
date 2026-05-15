@@ -192,7 +192,7 @@ namespace ServiceFlow.Infrastructure.Persistence.Migrations
                 table: "customers",
                 column: "user_id",
                 unique: true,
-                filter: "\"UserId\" IS NOT NULL");
+                filter: "user_id IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "ix_repair_media_repair_request_id",
